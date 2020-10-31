@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net5.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Collections.Immutable" Version="1.7.1" />
+    <PackageReference Include="OmniSharp.Extensions.LanguageProtocol" Version="0.18.2" />
+  </ItemGroup>
+
+</Project>
