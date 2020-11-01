@@ -1,15 +1,10 @@
-using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipelines;
 using System.Linq;
-using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
-using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
 using OmniSharp.Extensions.JsonRpc.Testing;
 using OmniSharp.Extensions.LanguageProtocol.Testing;
 using OmniSharp.Extensions.LanguageServer.Protocol;
@@ -117,84 +112,6 @@ AssuranceAgent=Hello Gerry
             server.Initialize(CancellationToken);
 
             return (clientPipe.Reader.AsStream(), serverPipe.Writer.AsStream());
-        }
-    }
-
-    class TestLoggerFactory : ILoggerFactory
-    {
-        private readonly ITestOutputHelper outputHelper;
-
-        public TestLoggerFactory(ITestOutputHelper outputHelper)
-        {
-            this.outputHelper = outputHelper;
-        }
-        public void AddProvider(ILoggerProvider provider)
-        {
-        }
-
-        public ILogger CreateLogger(string categoryName)
-        {
-            return new TestLogger(outputHelper);
-        }
-
-        public void Dispose()
-        {
-        }
-    }
-
-
-    public static class TestHelper
-    {
-        public static async Task DelayUntil<T>(Func<T> valueFunc, Func<T, bool> func, CancellationToken cancellationToken, TimeSpan? delay = null)
-        {
-            while (true)
-            {
-                if (func(valueFunc())) return;
-                await Task.Delay(delay ?? TimeSpan.FromMilliseconds(100), cancellationToken);
-            }
-        }
-
-        public static async Task DelayUntil(Func<bool> func, CancellationToken cancellationToken, TimeSpan? delay = null)
-        {
-            while (true)
-            {
-                if (func()) return;
-                await Task.Delay(delay ?? TimeSpan.FromMilliseconds(100), cancellationToken);
-            }
-        }
-
-        public static Task DelayUntil<T>(this T value, Func<T, bool> func, CancellationToken cancellationToken, TimeSpan? delay = null)
-        {
-            return DelayUntil(() => value, func, cancellationToken, delay);
-        }
-
-        public static Task DelayUntilCount<T>(this T value, int count, CancellationToken cancellationToken, TimeSpan? delay = null) where T : IEnumerable
-        {
-            return DelayUntil(() => value.OfType<object>().Count() >= count, cancellationToken, delay);
-        }
-    }
-
-    class TestLogger : ILogger
-    {
-        private readonly ITestOutputHelper outputHelper;
-
-        public TestLogger(ITestOutputHelper outputHelper)
-        {
-            this.outputHelper = outputHelper;
-        }
-        public IDisposable BeginScope<TState>(TState state)
-        {
-            return Disposable.Empty;
-        }
-
-        public bool IsEnabled(LogLevel logLevel)
-        {
-            return true;
-        }
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
-        {
-            outputHelper.WriteLine(logLevel.ToString() + ": " + formatter(state, exception));
         }
     }
 }
