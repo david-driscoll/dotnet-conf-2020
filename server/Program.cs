@@ -29,6 +29,9 @@ using System.Collections.Generic;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Configuration;
 using System.Buffers;
+using OmniSharp.Extensions.LanguageServer.Protocol.Workspace;
+using OmniSharp.Extensions.LanguageServer.Protocol.Serialization;
+using Range = OmniSharp.Extensions.LanguageServer.Protocol.Models.Range;
 
 namespace server
 {
@@ -59,6 +62,11 @@ namespace server
                     services.AddSingleton<TextDocumentStore>();
                     services.AddSingleton<TokenProvider>();
                     services.AddSingleton<OutlineProvider>();
+                    services.AddSingleton<CodeActionProvider>();
+                    services.AddSingleton<CodeActionProvider.CommandHandler>();
+                    services.AddSingleton<CodeLensProvider>();
+                    services.AddSingleton<FoldingRangeProvider>();
+                    services.AddSingleton<SelectionRangeProvider>();
                     services
                         .ConfigureSection<IniConfiguration>("ini")
                         .ConfigureSection<NinConfiguration>("nin");
@@ -103,6 +111,277 @@ namespace server
                     sectionName == null ? _.GetRequiredService<IConfiguration>() : _.GetRequiredService<IConfiguration>().GetSection(sectionName)
                 )
             );
+        }
+    }
+
+    class SelectionRangeProvider : SelectionRangeHandler
+    {
+
+        private readonly TextDocumentStore store;
+
+        public SelectionRangeProvider(TextDocumentStore store) : base(new SelectionRangeRegistrationOptions()
+        {
+            DocumentSelector = store.GetRegistrationOptions().DocumentSelector
+        })
+        {
+            this.store = store;
+        }
+
+        public override async Task<Container<SelectionRange>> Handle(SelectionRangeParams request, CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            if (!store.TryGetDocument(request.TextDocument.Uri, out var document)) return null;
+
+            var results = new List<SelectionRange>();
+            foreach (var position in request.Positions)
+            {
+
+                var range = document.GetItemAtPosition(position) switch
+                {
+                    NinValue v => GetSelectionRangeForValue(position, v, document),
+                    NinSection s => new SelectionRange()
+                    {
+                        Range = s.Location,
+                        Parent = new SelectionRange() { Range = ((s.Location.Start.Line, s.Location.Start.Character - 1), (s.Location.End.Line, s.Location.End.Character + 1)) }
+                    },
+                    _ => null
+                };
+                if (range == null) continue;
+                results.Add(range);
+            }
+
+            return results;
+
+            static SelectionRange GetSelectionRangeForValue(Position position, NinValue value, NinDocument document)
+            {
+                var ranges = new List<Range>();
+                if (position >= value.ValueLocation.Start && position <= value.ValueLocation.End)
+                {
+                    ranges.Add(value.ValueLocation);
+                }
+                if (position >= value.KeyLocation.Start && position <= value.KeyLocation.End)
+                {
+                    ranges.Add(value.KeyLocation);
+                }
+                ranges.Add((value.KeyLocation.Start, value.ValueLocation.End));
+
+                var section = document.GetSections().Single(z => z.Section == value.Section);
+
+                var end = document.GetValues()
+                    .Where(x => x.Section == value.Section)
+                    .MaxBy(z => z.ValueLocation.End).FirstOrDefault();
+                if (end != null)
+                {
+                    ranges.Add(((section.Location.Start.Line, section.Location.Start.Character - 1), end.ValueLocation.End));
+                }
+
+                ranges.Reverse();
+                var result = ranges.Aggregate<Range, SelectionRange>(null, (acc, value) => new SelectionRange()
+                {
+                    Range = value,
+                    Parent = acc
+                });
+                return result;
+            }
+        }
+    }
+
+    class FoldingRangeProvider : FoldingRangeHandler
+    {
+
+        private readonly TextDocumentStore store;
+
+        public FoldingRangeProvider(TextDocumentStore store) : base(new FoldingRangeRegistrationOptions()
+        {
+            DocumentSelector = store.GetRegistrationOptions().DocumentSelector
+        })
+        {
+            this.store = store;
+        }
+
+        public override async Task<Container<FoldingRange>> Handle(FoldingRangeRequestParam request, CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            if (!store.TryGetDocument(request.TextDocument.Uri, out var document)) return null;
+
+            return document.GetSections()
+                .Select(z =>
+                {
+                    var last = document.GetValues()
+                    .Where(x => x.Section == z.Section)
+                    .Aggregate(new Position(0, 0), (acc, v) =>
+                    {
+
+                        return acc > v.ValueLocation.End ? acc : v.ValueLocation.End;
+                    });
+                    return new FoldingRange()
+                    {
+                        StartLine = z.Location.Start.Line,
+                        StartCharacter = z.Location.Start.Character,
+                        EndLine = last.Line,
+                        EndCharacter = last.Character,
+                        Kind = FoldingRangeKind.Region
+                    };
+                }
+                )
+                .ToArray();
+        }
+    }
+
+    class CodeLensData : HandlerIdentity
+    {
+        public DocumentUri Uri { get; set; }
+        public string Section { get; set; }
+    }
+
+    class CodeLensProvider : CodeLensHandlerBase<CodeLensData>
+    {
+        private readonly TextDocumentStore store;
+
+        public CodeLensProvider(TextDocumentStore store) : base(new CodeLensRegistrationOptions()
+        {
+            DocumentSelector = store.GetRegistrationOptions().DocumentSelector,
+            ResolveProvider = true
+        })
+        {
+            this.store = store;
+        }
+
+        protected override async Task<CodeLensContainer<CodeLensData>> HandleParams(CodeLensParams request, CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            if (!store.TryGetDocument(request.TextDocument.Uri, out var document)) return null;
+
+            return document.GetSections().Select(z => new CodeLens<CodeLensData>()
+            {
+                Data = new CodeLensData() { Uri = request.TextDocument.Uri, Section = z.Section },
+                Range = ((z.Location.Start.Line, z.Location.Start.Character - 1), (z.Location.End.Line, z.Location.End.Character + 1))
+            }).ToArray();
+        }
+
+        protected override async Task<CodeLens<CodeLensData>> HandleResolve(CodeLens<CodeLensData> request, CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            if (!store.TryGetDocument(request.Data.Uri, out var document)) return request;
+            request.Command = new Command() { Title = $"🔑 {document.GetValues().Count(x => x.Section == request.Data.Section)} Values" };
+            return request;
+        }
+    }
+
+    class DataLocation : HandlerIdentity
+    {
+        public Location Location { get; set; }
+    }
+
+    class CodeActionProvider : CodeActionHandlerBase<DataLocation>
+    {
+        private readonly TextDocumentStore store;
+
+        public CodeActionProvider(TextDocumentStore store) : base(new CodeActionRegistrationOptions()
+        {
+            DocumentSelector = store.GetRegistrationOptions().DocumentSelector,
+            ResolveProvider = true,
+            CodeActionKinds = new Container<CodeActionKind>(
+                CodeActionKind.Empty,
+                CodeActionKind.QuickFix,
+                CodeActionKind.Refactor,
+                CodeActionKind.RefactorExtract,
+                CodeActionKind.RefactorInline,
+                CodeActionKind.RefactorRewrite,
+                CodeActionKind.Source,
+                CodeActionKind.SourceOrganizeImports
+            )
+        })
+        {
+            this.store = store;
+        }
+
+        protected override async Task<CommandOrCodeActionContainer> HandleParams(CodeActionParams request, CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            if (!store.TryGetDocument(request.TextDocument.Uri, out var document)) return null;
+            var item = document.GetItemAtPosition(request.Range.Start);
+            if (!(item is NinValue value)) return null;
+
+            if (
+                request.Range.Start >= value.ValueLocation.Start && request.Range.Start <= value.ValueLocation.End
+                 || request.Range.End >= value.ValueLocation.Start && request.Range.End <= value.ValueLocation.End
+            )
+            {
+                if (value.Value.AsSpan().Slice(0, 1).IsWhiteSpace())
+                {
+                    return new CommandOrCodeActionContainer(new CommandOrCodeAction(new CodeAction<Data>()
+                    {
+                        Title = "Remove Whitespace",
+                        Kind = CodeActionKind.QuickFix,
+                        Command = Command.Create("fix-whitespace")
+                            .WithArguments(new DataLocation()
+                            {
+                                Location = new Location()
+                                {
+                                    Range = request.Range,
+                                    Uri = request.TextDocument.Uri
+                                }
+                            }),
+                    }));
+                }
+            }
+            return null;
+        }
+
+        protected override Task<CodeAction<DataLocation>> HandleResolve(CodeAction<DataLocation> request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(request);
+        }
+
+        public class CommandHandler : ExecuteCommandHandlerBase<DataLocation>
+        {
+            private readonly TextDocumentStore store;
+            private readonly IWorkspaceLanguageServer languageServer;
+
+            public CommandHandler(TextDocumentStore store, ISerializer serializer, IWorkspaceLanguageServer languageServer) : base("fix-whitespace", serializer)
+            {
+                this.store = store;
+                this.languageServer = languageServer;
+            }
+
+            public override async Task<Unit> Handle(DataLocation arg1, CancellationToken cancellationToken)
+            {
+                await Task.Yield();
+                if (!store.TryGetDocument(arg1.Location.Uri, out var document)) return Unit.Value;
+                var item = document.GetItemAtPosition(arg1.Location.Range.Start);
+                if (!(item is NinValue value)) return Unit.Value;
+
+                await languageServer.ApplyWorkspaceEdit(new ApplyWorkspaceEditParams()
+                {
+                    Label = "Fixing whitespace",
+                    Edit = new WorkspaceEdit()
+                    {
+                        DocumentChanges = new Container<WorkspaceEditDocumentChange>(
+                            new TextDocumentEdit()
+                            {
+                                TextDocument = new VersionedTextDocumentIdentifier()
+                                {
+                                    Uri = arg1.Location.Uri,
+                                    Version = document.Version
+                                },
+                                Edits = new TextEditContainer(
+                                    new TextEdit()
+                                    {
+                                        NewText = "",
+                                        Range = (
+                                            (value.ValueLocation.Start.Line, value.ValueLocation.Start.Character),
+                                            (value.ValueLocation.Start.Line, value.ValueLocation.Start.Character + (value.Value.Length - value.Value.Trim().Length))
+                                        )
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }, cancellationToken: cancellationToken);
+
+                return Unit.Value;
+            }
         }
     }
 
@@ -539,7 +818,8 @@ namespace server
                 {
                     Range = s.Location,
                     Contents = new MarkedStringsOrMarkupContent(new MarkedString($"section: {s.Section}"))
-                }
+                },
+                _ => null
             };
         }
     }

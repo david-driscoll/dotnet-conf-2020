@@ -146,7 +146,7 @@ namespace parser
                     {
                         // remove the brackets
                         sectionPrefix = line[1..^1] + ':';
-                        sections.Add(new NinSection(line[1..^1], ((lineNumber, 1), (lineNumber, line.Length - 2))));
+                        sections.Add(new NinSection(line[1..^1], ((lineNumber, 1), (lineNumber, line.Length - 1))));
                     }
                     else
                     {
@@ -177,9 +177,9 @@ namespace parser
                     continue;
                 }
 
-                var key = line.Substring(0, separator).Trim();
+                var key = line.Substring(0, separator);
                 string combinedKey = sectionPrefix + line.Substring(0, separator).Trim();
-                string value = line[(separator + 1)..].Trim();
+                string value = line[(separator + 1)..];
 
                 // Remove quotes
                 if (value.Length > 1 && value[0] == '"' && value[^1] == '"')
@@ -187,6 +187,7 @@ namespace parser
                     value = value[1..^1];
                 }
 
+                var keyLocation = ((lineNumber, 0), (lineNumber, separator));
                 if (values.ContainsKey(combinedKey))
                 {
                     diagnostics.Add(new Diagnostic()
@@ -194,13 +195,25 @@ namespace parser
                         Code = "NINHURT",
                         Message = "Duplicate key detected",
                         Severity = DiagnosticSeverity.Error,
-                        Range = ((lineNumber, 0), (lineNumber, line.Length - 1)),
+                        Range = keyLocation,
                         Source = "NIN",
                     });
-                    continue;
                 }
 
-                values.Add(combinedKey, new NinValue(sectionPrefix[0..^1], key, ((lineNumber, 0), (lineNumber, separator)), value, ((lineNumber, separator + 1), (lineNumber, rawLine.Length - 1))));
+                var ninValue = new NinValue(sectionPrefix[0..^1], key, keyLocation, value, ((lineNumber, separator + 1), (lineNumber, rawLine.Length)));
+                values.Add(values.ContainsKey(combinedKey) ? Guid.NewGuid().ToString() : combinedKey, ninValue);
+
+                if (value.Length > 0 && char.IsWhiteSpace(value[0]))
+                {
+                    diagnostics.Add(new Diagnostic()
+                    {
+                        Code = "NINWHSP",
+                        Message = "Remove leading whitespace",
+                        Severity = DiagnosticSeverity.Information,
+                        Range = (ninValue.ValueLocation.Start, (lineNumber, ninValue.ValueLocation.Start.Character + value.Length - value.Trim().Length)),
+                        Source = "NIN",
+                    });
+                }
             }
 
             _diagnostics = diagnostics.ToImmutable();

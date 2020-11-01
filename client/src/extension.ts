@@ -15,6 +15,8 @@ import {
   ServerOptions,
   StreamInfo,
   TransportKind,
+  CancellationReceiverStrategy,
+  CancellationStrategy,
 } from "vscode-languageclient/node";
 
 let client: LanguageClient;
@@ -22,12 +24,18 @@ let client: LanguageClient;
 export function activate(context: ExtensionContext) {
   const connectFunc = () => {
     return new Promise<StreamInfo>((resolve, reject) => {
+      function tryConnect() {
+        const socket = connect(`\\\\.\\pipe\\ninrocks`);
+        socket.on("connect", () => {
+          resolve({ writer: socket, reader: socket });
+        });
+        socket.on("error", (e) => {
+          setTimeout(tryConnect, 5000);
+        });
+      }
       // TODO: Demoware - Named pipes are handled differently by differently on *NIX
       // https://github.com/PowerShell/PowerShellEditorServices/blob/65a7a79e7f17d76e232b43507ca58a14d79e64eb/src/PowerShellEditorServices.Hosting/Internal/NamedPipeUtils.cs#L142
-      const socket = connect(`\\\\.\\pipe\\ninrocks`);
-      socket.on("connect", () => {
-        resolve({ writer: socket, reader: socket });
-      });
+      tryConnect();
     });
   };
 
@@ -48,6 +56,10 @@ export function activate(context: ExtensionContext) {
     ],
 
     progressOnInitialization: true,
+    connectionOptions: {
+      maxRestartCount: 10,
+      cancellationStrategy: CancellationStrategy.Message,
+    },
     synchronize: {
       // Synchronize the setting section 'languageServerExample' to the server
       // configurationSection: "languageServerExample",
