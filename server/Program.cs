@@ -492,18 +492,6 @@ namespace server
         private readonly TextDocumentStore store;
         private readonly IOptionsMonitor<IniConfiguration> optionsMonitor;
 
-        /*
-        (IOptionsMonitor<IniConfiguration> optionsMonitor, IWorkspaceLanguageServer textDocumentLanguageServer, CompletionProvider completionProvider)
-                {
-                    var currentState = optionsMonitor.CurrentValue.Rainbow;
-                    optionsMonitor.OnChange(config =>
-                    {
-                        if (config.Rainbow != currentState)
-                        {
-                            textDocumentLanguageServer.RequestSemanticTokensRefresh(new SemanticTokensRefreshParams());
-                        }
-                    });
-        */
         public TokenProvider(TextDocumentStore store, IOptionsMonitor<IniConfiguration> optionsMonitor, IWorkspaceLanguageServer textDocumentLanguageServer) : base(new SemanticTokensRegistrationOptions()
         {
             DocumentSelector = store.GetRegistrationOptions().DocumentSelector,

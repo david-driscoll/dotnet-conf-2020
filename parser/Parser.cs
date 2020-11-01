@@ -200,7 +200,7 @@ namespace parser
                     });
                 }
 
-                var ninValue = new NinValue(sectionPrefix[0..^1], key, keyLocation, value, ((lineNumber, separator + 1), (lineNumber, rawLine.Length)));
+                var ninValue = new NinValue(string.IsNullOrEmpty(sectionPrefix) ? sectionPrefix : sectionPrefix[0..^1], key, keyLocation, value, ((lineNumber, separator + 1), (lineNumber, line.Length - 1)));
                 values.Add(values.ContainsKey(combinedKey) ? Guid.NewGuid().ToString() : combinedKey, ninValue);
 
                 if (value.Length > 0 && char.IsWhiteSpace(value[0]))
