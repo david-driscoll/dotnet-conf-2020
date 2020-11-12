@@ -13,6 +13,7 @@ using Microsoft.Extensions.Configuration;
 using System.Linq;
 using System.Collections.Immutable;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
+using System.Diagnostics;
 
 namespace server
 {
@@ -20,9 +21,31 @@ namespace server
     {
         static async Task Main(string[] args)
         {
-            var (input, output) = await CreateNamedPipe();
-            var server = await LanguageServer.From(options => ConfigureServer(options, input, output));
-            await server.WaitForExit;
+            while (true)
+            {
+                await Console.Error.WriteLineAsync("Waiting for client to connect on pipe...");
+                var (input, output) = await CreateNamedPipe();
+                var server = await LanguageServer.From(options => ConfigureServer(options, input, output));
+                await Console.Error.WriteLineAsync("Client connected!");
+
+                await Task.WhenAny(
+                    Task.Run(async () =>
+                    {
+                        while (true)
+                        {
+                            await Task.Delay(1000);
+                            if (server.ClientSettings.ProcessId.HasValue && Process.GetProcessById((int)server.ClientSettings.ProcessId.Value).HasExited)
+                            {
+                                await Console.Error.WriteLineAsync("Client disappeared restarting");
+                                server.ForcefulShutdown();
+                                return;
+                            }
+                        }
+                    }),
+                    server.WaitForExit
+                );
+                await Console.Error.WriteLineAsync("Server was shutdown restarting...");
+            }
         }
 
         public static void ConfigureServer(LanguageServerOptions options, PipeReader input, PipeWriter output)
@@ -39,18 +62,19 @@ namespace server
                 .WithServices(services =>
                 {
                     services
-                        .AddSingleton<CompletionProvider>()
-                        .AddSingleton<HoverProvider>()
                         .AddSingleton<TextDocumentStore>()
-                        .AddSingleton<TokenProvider>()
-                        .AddSingleton<OutlineProvider>()
-                        .AddSingleton<CodeActionProvider>()
-                        .AddSingleton<CodeActionProvider.CommandHandler>()
-                        .AddSingleton<CodeLensProvider>()
-                        .AddSingleton<FoldingRangeProvider>()
-                        .AddSingleton<SelectionRangeProvider>()
+                        // .AddSingleton<CompletionProvider>()
+                        // .AddSingleton<HoverProvider>()
+                        // .AddSingleton<TokenProvider>()
+                        // .AddSingleton<OutlineProvider>()
+                        // .AddSingleton<CodeActionProvider>()
+                        // .AddSingleton<CodeActionProvider.CommandHandler>()
+                        // .AddSingleton<CodeLensProvider>()
+                        // .AddSingleton<FoldingRangeProvider>()
+                        // .AddSingleton<SelectionRangeProvider>()
                         .ConfigureSection<IniConfiguration>("ini")
-                        .ConfigureSection<NinConfiguration>("nin");
+                        .ConfigureSection<NinConfiguration>("nin")
+                        ;
                 })
                 .WithConfigurationSection("ini")
                 .WithConfigurationSection("nin")

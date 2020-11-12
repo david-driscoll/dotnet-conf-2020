@@ -45,6 +45,9 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="IniContentDefinition.cs" />
+    <Compile Include="NinContentDefinition.cs" />
+    <Compile Include="NinLanguageClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="client.vsPackage.cs" />
   </ItemGroup>

@@ -1,4 +1,8 @@
 {
     "ini.rainbow": false,
-    "nin.hardrock": false
+    "nin.hardrock": false,
+    "screencastMode.onlyKeyboardShortcuts": true,
+    "screencastMode.mouseIndicatorColor": "#00ff9d",
+    "screencastMode.fontSize": 48,
+    "screencastMode.verticalOffset": 24
 }

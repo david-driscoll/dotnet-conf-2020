@@ -93,8 +93,8 @@ namespace parser
             for (var i = 0; i < index; i++)
             {
                 character++;
-                if (_content[i] == '\n') { line++; character = 0; }
                 if (i + 1 > _content.Length) break;
+                if (_content[i] == '\n') { line++; character = 0; }
             }
             return (line, character);
         }

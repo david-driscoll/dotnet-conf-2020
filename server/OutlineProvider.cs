@@ -4,6 +4,7 @@ using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 using System.Threading;
 using System.Linq;
 using System.Buffers;
+using System;
 
 namespace server
 {
@@ -25,7 +26,7 @@ namespace server
             await Task.Yield();
             if (!store.TryGetDocument(request.TextDocument.Uri, out var document)) return null;
 
-            return document.GetSections()
+            var symbols = document.GetSections()
                 .Select(section =>
                 {
                     var children = document.GetValues()
@@ -58,6 +59,17 @@ namespace server
                     };
                 })
                 .ToArray();
+
+            // Visual Studio doesn't support the hierarchy
+            if (!Capability.HierarchicalDocumentSymbolSupport)
+            {
+                symbols = symbols
+                    .Expand(z => z.Children?.ToArray() ?? Array.Empty<DocumentSymbol>())
+                    .Do(x => x.Children = null)
+                    .ToArray();
+            }
+
+            return symbols;
         }
     }
 }
