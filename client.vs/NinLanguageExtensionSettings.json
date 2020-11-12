@@ -1,0 +1,7 @@
+{
+  "ini.rainbow": false,
+  "nin.hardrock": false,
+  "nin.trace.server": "verbose",
+  "foo.trace.server": "verbose",
+  "ini.trace.server": "verbose"
+}

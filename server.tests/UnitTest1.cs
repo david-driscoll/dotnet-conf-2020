@@ -92,7 +92,7 @@ AssuranceAgent=Hello Gerry
             ITestOutputHelper testOutputHelper
         ) : base(
             new JsonRpcTestOptions()
-            .WithClientLoggerFactory(new TestLoggerFactory(testOutputHelper))
+            .WithClientLoggerFactory(new TestLogger Factory(testOutputHelper))
             .WithServerLoggerFactory(new TestLoggerFactory(testOutputHelper))
         )
         {

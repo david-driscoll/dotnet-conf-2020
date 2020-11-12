@@ -11,7 +11,7 @@ namespace parser
     public class NinDocument
     {
         private string _content;
-        private bool _isParsed = false;
+        private bool _isParsed;
         private ImmutableArray<NinSection> _sections = ImmutableArray<NinSection>.Empty;
         private ImmutableDictionary<string, NinValue> _values = ImmutableDictionary<string, NinValue>.Empty;
         private ImmutableArray<Diagnostic> _diagnostics;
@@ -221,8 +221,6 @@ namespace parser
             _sections = sections.ToImmutable();
             _isParsed = true;
         }
-
-
     }
 
     public record NinValue(string Section, string Key, Range KeyLocation, string Value, Range ValueLocation);

@@ -10,6 +10,9 @@ using Nerdbank.Streams;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Configuration;
+using System.Linq;
+using System.Collections.Immutable;
+using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 
 namespace server
 {
@@ -35,33 +38,41 @@ namespace server
                 )
                 .WithServices(services =>
                 {
-                    services.AddSingleton<CompletionProvider>();
-                    services.AddSingleton<HoverProvider>();
-                    services.AddSingleton<TextDocumentStore>();
-                    services.AddSingleton<TokenProvider>();
-                    services.AddSingleton<OutlineProvider>();
-                    services.AddSingleton<CodeActionProvider>();
-                    services.AddSingleton<CodeActionProvider.CommandHandler>();
-                    services.AddSingleton<CodeLensProvider>();
-                    services.AddSingleton<FoldingRangeProvider>();
-                    services.AddSingleton<SelectionRangeProvider>();
                     services
+                        .AddSingleton<CompletionProvider>()
+                        .AddSingleton<HoverProvider>()
+                        .AddSingleton<TextDocumentStore>()
+                        .AddSingleton<TokenProvider>()
+                        .AddSingleton<OutlineProvider>()
+                        .AddSingleton<CodeActionProvider>()
+                        .AddSingleton<CodeActionProvider.CommandHandler>()
+                        .AddSingleton<CodeLensProvider>()
+                        .AddSingleton<FoldingRangeProvider>()
+                        .AddSingleton<SelectionRangeProvider>()
                         .ConfigureSection<IniConfiguration>("ini")
                         .ConfigureSection<NinConfiguration>("nin");
                 })
                 .WithConfigurationSection("ini")
-                .WithConfigurationSection("nin");
+                .WithConfigurationSection("nin")
+                .OnInitialized((instance, client, server, ct) =>
+                {
+                    // Bug in visual studio support where CodeActionKind.Empty is not supported, and throws (instead of gracefully ignoring it)
+                    if (server?.Capabilities?.CodeActionProvider?.Value?.CodeActionKinds != null)
+                    {
+                        server.Capabilities.CodeActionProvider.Value.CodeActionKinds = server.Capabilities.CodeActionProvider.Value.CodeActionKinds.ToImmutableArray().Remove(CodeActionKind.Empty).ToArray();
+                    }
+                    return Task.CompletedTask;
+                });
         }
 
         private static async Task<(PipeReader input, PipeWriter output)> CreateNamedPipe()
         {
-
             var pipe = new NamedPipeServerStream(
                             pipeName: @"ninrocks",
                             direction: PipeDirection.InOut,
                             maxNumberOfServerInstances: 1,
                             transmissionMode: PipeTransmissionMode.Byte,
-                            options: System.IO.Pipes.PipeOptions.CurrentUserOnly | System.IO.Pipes.PipeOptions.Asynchronous);
+                            options: System.IO.Pipes.PipeOptions.Asynchronous);
             await pipe.WaitForConnectionAsync();
             var pipeline = pipe.UsePipe();
             // await pipe.WaitForConnectionAsync().ConfigureAwait(false);
@@ -76,8 +87,8 @@ namespace server
                 throw new ArgumentNullException(nameof(services));
             }
 
-            services.AddOptions();
-            services.AddSingleton<IOptionsChangeTokenSource<TOptions>>(
+            services.AddOptions()
+                .AddSingleton<IOptionsChangeTokenSource<TOptions>>(
                 _ => new ConfigurationChangeTokenSource<TOptions>(
                     Options.DefaultName,
                     sectionName == null ? _.GetRequiredService<IConfiguration>() : _.GetRequiredService<IConfiguration>().GetSection(sectionName)
